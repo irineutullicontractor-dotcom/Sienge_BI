@@ -15,6 +15,7 @@ st.markdown("Selecione o tipo de relatório, envie o arquivo e gere o resultado.
 # =========================
 
 def relatorio_financeiro(file):
+
     df = pd.read_excel(file, header=None)
 
     header_row_index = None
@@ -29,104 +30,211 @@ def relatorio_financeiro(file):
             break
 
         if header_row_index is not None and index > header_row_index:
+
             dados.append({
                 'Emissão': row[0],
                 'Vencto': row[1],
-                'Cliente': row[3],
-                'Título': row[5],
+                'Cliente/Fornecedor/Complemento': row[3],
+                'Título/Parcela': row[5],
                 'Documento': row[8],
-                'Plano': row[10],
+                'Plano financeiro': row[10],
                 'Crédito': row[13],
-                'Débito': row[17],
+                'Débito': row[17]
             })
 
     return pd.DataFrame(dados)
 
 
 def relatorio_apropriacao(file):
+
     df = pd.read_excel(file, header=None)
 
-    dados = []
-    periodo = None
-    obra = None
+    periodo_atual = None
+    selecao_atual = None
+    obra_atual = None
+    unidade_atual = None
+    celula_atual = None
+    etapa_atual = None
+    subetapa_atual = None
+    header_row_index = None
+    dados_reestruturados = []
 
-    for i, row in df.iterrows():
+    date_time_pattern = re.compile(r'\d{2}/\d{2}/\d{4} - \d{2}:\d{2}:\d{2}')
 
-        if row[0] == 'Período':
-            periodo = row[4]
+    for index, row in df.iterrows():
 
-        if row[0] == 'Obra':
-            obra = row[4]
-
-        if row[0] == 'Data':
-            header = i
+        if (isinstance(row[0], str) and row[0].strip() in [
+            'Total da etapa','Total da subetapa','Total da célula construtiva',
+            'Total da unidade construtiva','Total da obra'
+        ]) or pd.isna(row[0]) or \
+           (isinstance(row[0], str) and date_time_pattern.match(row[0].strip())):
             continue
 
-        if 'header' in locals() and i > header:
-            dados.append({
-                'Período': periodo,
-                'Obra': obra,
+        if row[0] == 'Período':
+            periodo_atual = row[4]
+
+        if row[8] == 'Seleção por':
+            selecao_atual = row[13]
+
+        if row[0] == 'Obra':
+            obra_atual = row[4]
+
+        if row[0] == 'Unidade construtiva':
+            unidade_atual = row[4]
+
+        if row[0] == 'Célula construtiva':
+            celula_atual = row[4]
+
+        if isinstance(row[0], str) and row[0].strip() == 'Etapa':
+            etapa_atual = row[4]
+            subetapa_atual = None
+            continue
+
+        if isinstance(row[0], str) and row[0].strip() == 'Subetapa':
+            subetapa_atual = row[4]
+            continue
+
+        if row[0] == 'Data':
+            header_row_index = index
+            continue
+
+        if header_row_index is not None and index > header_row_index:
+
+            val_data = row[0]
+            if isinstance(val_data, str) and val_data.strip() in ['Período','Seleção por','Data']:
+                continue
+
+            dados_reestruturados.append({
+                'Período': periodo_atual,
+                'Seleção por': selecao_atual,
+                'Obra': obra_atual,
+                'Unidade construtiva': unidade_atual,
+                'Célula construtiva': celula_atual,
+                'Etapa': etapa_atual,
+                'Subetapa': subetapa_atual,
                 'Data': row[0],
                 'Documento': row[1],
-                'Valor': row[12],
+                'Título/Parcela': row[4],
+                'Or': row[6],
+                'Credor / Histórico': row[7],
+                'Valor do documento': row[12],
+                'Valor apropriado': row[14],
             })
 
-    return pd.DataFrame(dados)
+    df_reestruturado = pd.DataFrame(dados_reestruturados)
+
+    column_order = [
+        'Período','Seleção por','Obra','Unidade construtiva',
+        'Célula construtiva','Etapa','Subetapa','Data','Documento',
+        'Título/Parcela','Or','Credor / Histórico',
+        'Valor do documento','Valor apropriado'
+    ]
+
+    return df_reestruturado[column_order]
 
 
 def relatorio_bens(file):
+
     df = pd.read_excel(file, header=None)
 
-    dados = []
-    centro = None
+    centro_custo_atual = None
+    grupo_atual = None
+    header_row_index = None
+    dados_reestruturados = []
 
-    for i, row in df.iterrows():
+    date_time_pattern = re.compile(r'\d{2}/\d{2}/\d{4} - \d{2}:\d{2}:\d{2}')
+
+    for index, row in df.iterrows():
+
+        if isinstance(row[0], str) and date_time_pattern.match(str(row[0])):
+            break
 
         if row[0] == 'Centro de custo':
-            centro = row[3]
+            centro_custo_atual = row[3]
+
+        if row[0] == 'Grupo':
+            grupo_atual = row[3]
 
         if row[0] == 'Patrimônio':
-            header = i
-            continue
+            header_row_index = index
 
-        if 'header' in locals() and i > header:
-            if pd.notna(row[0]):
-                dados.append({
-                    'Centro': centro,
+        if header_row_index is not None and index > header_row_index:
+
+            if pd.notna(row[0]) and row[0] not in ['Centro de custo','Grupo']:
+
+                dados_reestruturados.append({
+                    'Centro de custo': centro_custo_atual,
+                    'Grupo': grupo_atual,
                     'Patrimônio': row[0],
+                    'Placa/Plaqueta': row[1],
+                    'Cód barras': row[2],
                     'Descrição': row[4],
+                    'Conservação': row[6],
+                    'Dt. Incorporação': row[7],
                     'Situação': row[9],
+                    'Localização atual': row[10]
                 })
 
-    return pd.DataFrame(dados)
+    df = pd.DataFrame(dados_reestruturados)
+
+    return df[
+        ['Centro de custo','Grupo','Patrimônio','Placa/Plaqueta','Cód barras',
+         'Descrição','Conservação','Dt. Incorporação','Situação','Localização atual']
+    ]
 
 
-def relatorio_diario(file):
+def relatorio_historico_bens(file):
+
     df = pd.read_excel(file, header=None)
 
+    patrimonio_atual = None
+    placa_atual = None
+    detalhamento_atual = None
+    header_row_index = None
     dados = []
-    centro = None
 
-    for i, row in df.iterrows():
+    last_data = None
+    last_tipo = None
 
-        if isinstance(row[0], str) and "Centro de custo" in row[0]:
-            centro = row[3]
+    for index, row in df.iterrows():
 
-        if isinstance(row[0], str) and "Número" in row.values:
-            header = i
+        if row[0] == 'Patrimônio':
+            patrimonio_atual = row[3]
+
+        if row[6] == 'Placa/Plaqueta':
+            placa_atual = row[7]
+
+        if row[0] == 'Detalhamento':
+            detalhamento_atual = row[3]
+
+        if row[0] == 'Data':
+            header_row_index = index
             continue
 
-        if 'header' in locals() and i > header:
-            if pd.notna(row[0]):
-                dados.append({
-                    'Centro': centro,
-                    'Número': row[0],
-                    'Obra': row[1],
-                    'Operador': row[7],
-                })
+        if header_row_index is not None and index > header_row_index:
+
+            val_data = row[0]
+            if isinstance(val_data, str) and val_data.strip() in ['Patrimônio','Detalhamento','Data']:
+                continue
+
+            data = row[0] if pd.notna(row[0]) else last_data
+            if pd.notna(row[0]): last_data = row[0]
+
+            tipo = row[1] if pd.notna(row[1]) else last_tipo
+            if pd.notna(row[1]): last_tipo = row[1]
+
+            dados.append({
+                'Patrimônio': patrimonio_atual,
+                'Placa/Plaqueta': placa_atual,
+                'Detalhamento': detalhamento_atual,
+                'Data': data,
+                'Tipo do movimento': tipo,
+                'Movimento': row[3],
+                'Centro(s) de Custo': row[4],
+                'Responsável': row[11],
+            })
 
     return pd.DataFrame(dados)
-
 
 def relatorio_eq_analitico(file):
     df = pd.read_excel(file, header=None)
@@ -294,9 +402,8 @@ relatorios = {
     "Financeiro": relatorio_financeiro,
     "Apropriação de Obra": relatorio_apropriacao,
     "Bens Sintético": relatorio_bens,
-    "Diário Equipamento (Simples)": relatorio_diario,
-    "Equipamento Analítico": relatorio_eq_analitico,
-    "🔥 Diário Equipamento COMPLETO": relatorio_diario_eq_completo,
+    "Histórico de Bens": relatorio_historico_bens,
+    "Diário Equipamento COMPLETO": relatorio_diario_eq_completo,
 }
 
 # =========================

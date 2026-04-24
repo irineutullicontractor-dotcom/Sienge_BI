@@ -625,8 +625,8 @@ relatorios = {
     "Apropriação de Obra": relatorio_apropriacao,
     "Bens Sintético": relatorio_bens,
     "Histórico de Bens": relatorio_historico_bens,
-    "Diário Equipamento COMPLETO": relatorio_diario_eq_completo,
-    "Equipamento Analítico (Completo)": relatorio_eq_analitico,
+    "Diário Equipamento": relatorio_diario_eq_completo,
+    "Equipamento Analítico": relatorio_eq_analitico,
     "Mapa Controle (1 Obra)": relatorio_mapa_controle_1_obra,
 }
 

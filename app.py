@@ -392,8 +392,230 @@ def relatorio_diario_eq_completo(file):
     ]
 
     return df_reestruturado.reindex(columns=column_order)
+    
+def relatorio_eq_analitico(file):
 
+    import pandas as pd
+    import re
 
+    df = pd.read_excel(file, header=None)
+
+    dados_reestruturados = []
+
+    date_time_pattern = re.compile(r'\d{2}/\d{2}/\d{4} - \d{2}:\d{2}:\d{2}')
+
+    centro_custo_atual = None
+    equipamento_atual = None
+    codigo_barras_atual = None
+    placa_atual = None
+    grupo_atual = None
+    insumo_atual = None
+    detalhamento_atual = None
+    observacao_atual = None
+    estado_conservacao_atual = None
+    cor_atual = None
+    combustivel_atual = None
+    n_chassi_atual = None
+    potencia_atual = None
+    ano_fab_atual = None
+    ano_mod_atual = None
+    obra_atual = None
+    atual_atual = None
+    historico_atual = None
+    horimetro_atual = None
+    horimetro_historico = None
+    hodometro_atual = None
+    hodometro_historico = None
+
+    for index, row in df.iterrows():
+        row_str = row.astype(str).fillna('')
+
+        if 'Centro de custo' in row_str.values:
+
+            if equipamento_atual is not None:
+                dados_reestruturados.append({
+                    'Centro de custo': centro_custo_atual,
+                    'Equipamento': equipamento_atual,
+                    'Código barras': codigo_barras_atual,
+                    'Placa/Plaqueta': placa_atual,
+                    'Grupo': grupo_atual,
+                    'Insumo': insumo_atual,
+                    'Detalhamento': detalhamento_atual,
+                    'Observação': observacao_atual,
+                    'Estado de conservação': estado_conservacao_atual,
+                    'Cor': cor_atual,
+                    'Combustível': combustivel_atual,
+                    'Nº de série/chassi': n_chassi_atual,
+                    'Potência': potencia_atual,
+                    'Ano fabricação': ano_fab_atual,
+                    'Ano modelo': ano_mod_atual,
+                    'Setor/Obra atual': obra_atual,
+                    'Horímetro Atual': horimetro_atual,
+                    'Horímetro Histórico': horimetro_historico,
+                    'Hodômetro Atual': hodometro_atual,
+                    'Hodômetro Histórico': hodometro_historico
+                })
+
+            # RESET
+            centro_custo_atual = None
+            equipamento_atual = None
+            codigo_barras_atual = None
+            placa_atual = None
+            grupo_atual = None
+            insumo_atual = None
+            detalhamento_atual = None
+            observacao_atual = None
+            estado_conservacao_atual = None
+            cor_atual = None
+            combustivel_atual = None
+            n_chassi_atual = None
+            potencia_atual = None
+            ano_fab_atual = None
+            ano_mod_atual = None
+            obra_atual = None
+            horimetro_atual = None
+            horimetro_historico = None
+            hodometro_atual = None
+            hodometro_historico = None
+
+            centro_custo_atual = row_str[2]
+
+        if 'Equipamento' in row_str.values:
+            equipamento_atual = row_str[2]
+
+        if 'Código barras' in row_str.values:
+            try:
+                col_index = row_str[row_str.str.contains('Código barras', na=False)].index[0]
+                codigo_barras_atual = row_str[col_index + 1]
+            except:
+                pass
+
+        if 'Placa/Plaqueta' in row_str.values:
+            try:
+                col_index = row_str[row_str.str.contains('Placa/Plaqueta', na=False)].index[0]
+                placa_atual = row_str[col_index + 2]
+            except:
+                pass
+
+        if 'Grupo' in row_str.values:
+            grupo_atual = row_str[2]
+
+        if 'Insumo' in row_str.values:
+            insumo_atual = row_str[2]
+
+        if 'Detalhamento' in row_str.values:
+            detalhamento_atual = row_str[2]
+
+        if 'Observação' in row_str.values:
+            observacao_atual = row_str[2]
+
+        if 'Estado de conservação' in row_str.values:
+            estado_conservacao_atual = row_str[2]
+
+        if 'Cor' in row_str.values:
+            try:
+                col_index = row_str[row_str.str.contains('Cor', na=False)].index[0]
+                cor_atual = row_str[col_index + 1]
+            except:
+                pass
+
+        if 'Combustível' in row_str.values:
+            try:
+                col_index = row_str[row_str.str.contains('Combustível', na=False)].index[0]
+                combustivel_atual = row_str[col_index + 2]
+            except:
+                pass
+
+        if 'Nº de série/chassi' in row_str.values:
+            n_chassi_atual = row_str[2]
+
+        if 'Potência' in row_str.values:
+            try:
+                col_index = row_str[row_str.str.contains('Potência', na=False)].index[0]
+                potencia_atual = row_str[col_index + 1]
+            except:
+                pass
+
+        if 'Ano fabricação' in row_str.values:
+            ano_fab_atual = row_str[2]
+
+        if 'Ano modelo' in row_str.values:
+            try:
+                col_index = row_str[row_str.str.contains('Ano modelo', na=False)].index[0]
+                ano_mod_atual = row_str[col_index + 1]
+            except:
+                pass
+
+        if 'Setor/Obra atual' in row_str.values:
+            obra_atual = row_str[2]
+
+        if row_str[0] == 'Atual' and row_str[4] == 'Histórico':
+            atual_value = row_str[2]
+            historico_value = row_str[5]
+
+            if 'h' in atual_value or 'h' in historico_value:
+                horimetro_atual = atual_value
+                horimetro_historico = historico_value
+                hodometro_atual = None
+                hodometro_historico = None
+            else:
+                hodometro_atual = atual_value
+                hodometro_historico = historico_value
+                horimetro_atual = None
+                horimetro_historico = None
+
+    if equipamento_atual is not None:
+        dados_reestruturados.append({
+            'Centro de custo': centro_custo_atual,
+            'Equipamento': equipamento_atual,
+            'Código barras': codigo_barras_atual,
+            'Placa/Plaqueta': placa_atual,
+            'Grupo': grupo_atual,
+            'Insumo': insumo_atual,
+            'Detalhamento': detalhamento_atual,
+            'Observação': observacao_atual,
+            'Estado de conservação': estado_conservacao_atual,
+            'Cor': cor_atual,
+            'Combustível': combustivel_atual,
+            'Nº de série/chassi': n_chassi_atual,
+            'Potência': potencia_atual,
+            'Ano fabricação': ano_fab_atual,
+            'Ano modelo': ano_mod_atual,
+            'Setor/Obra atual': obra_atual,
+            'Horímetro Atual': horimetro_atual,
+            'Horímetro Histórico': horimetro_historico,
+            'Hodômetro Atual': hodometro_atual,
+            'Hodômetro Histórico': hodometro_historico
+        })
+
+    df_reestruturado = pd.DataFrame(dados_reestruturados)
+
+    column_order = [
+        'Centro de custo','Equipamento','Código barras','Placa/Plaqueta','Grupo',
+        'Insumo','Detalhamento','Observação','Estado de conservação','Cor',
+        'Combustível','Nº de série/chassi','Potência','Ano fabricação',
+        'Ano modelo','Setor/Obra atual','Horímetro Atual','Horímetro Histórico',
+        'Hodômetro Atual','Hodômetro Histórico'
+    ]
+
+    if not df_reestruturado.empty:
+        df_reestruturado = df_reestruturado[column_order]
+
+    return df_reestruturado
+
+def relatorio_mapa_controle_1_obra(file):
+
+    import pandas as pd
+
+    df = pd.read_excel(file, header=6)
+
+    colunas_para_remover = [2, 4, 7, 9, 15, 17]
+    df.drop(df.columns[colunas_para_remover], axis=1, inplace=True)
+
+    df_final = df.dropna(subset=['Item'])
+
+    return df_final
+    
 # =========================
 # 🔹 DICIONÁRIO
 # =========================
@@ -404,6 +626,8 @@ relatorios = {
     "Bens Sintético": relatorio_bens,
     "Histórico de Bens": relatorio_historico_bens,
     "Diário Equipamento COMPLETO": relatorio_diario_eq_completo,
+    "Equipamento Analítico (Completo)": relatorio_eq_analitico,
+    "Mapa Controle (1 Obra)": relatorio_mapa_controle_1_obra,
 }
 
 # =========================

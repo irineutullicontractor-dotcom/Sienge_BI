@@ -290,7 +290,7 @@ def relatorio_historico_bens(file):
                     'Responsável': responsavel,
                 })
 
-    return pd.DataFrame(dados)
+    return pd.DataFrame(dados_reestruturados)
 
 def relatorio_eq_analitico(file):
     df = pd.read_excel(file, header=None)

@@ -187,17 +187,20 @@ def relatorio_historico_bens(file):
 
     df = pd.read_excel(file, header=None)
 
+    # Variáveis de contexto
     patrimonio_atual = None
     placa_atual = None
     detalhamento_atual = None
     header_row_index = None
-    dados = []
+    dados_reestruturados = []
 
+    # Variáveis para preencher células em branco (Forward Fill manual)
     last_data = None
-    last_tipo = None
+    last_tipo_movimento = None
 
+    # Loop principal
     for index, row in df.iterrows():
-
+        # Captura de metadados que ficam acima da tabela de dados
         if row[0] == 'Patrimônio':
             patrimonio_atual = row[3]
 
@@ -207,32 +210,85 @@ def relatorio_historico_bens(file):
         if row[0] == 'Detalhamento':
             detalhamento_atual = row[3]
 
+        # Identifica o cabeçalho da tabela de movimentações
         if row[0] == 'Data':
             header_row_index = index
+            col_idx_data = 0
+            col_idx_tipo_movimento = 1
+            col_idx_movimento = 3
+            col_idx_centro_custo = 4
+            col_idx_setor_obra_col = 8
+            col_idx_codigo_barras = 9
+            col_idx_responsavel = 11
             continue
 
+        # Processamento das linhas de dados abaixo do cabeçalho 'Data'
         if header_row_index is not None and index > header_row_index:
-
-            val_data = row[0]
-            if isinstance(val_data, str) and val_data.strip() in ['Patrimônio','Detalhamento','Data']:
+            
+            # IGNORAR linhas que repetem cabeçalhos ou campos de contexto
+            val_data = row[col_idx_data]
+            if isinstance(val_data, str) and val_data.strip() in ['Patrimônio', 'Detalhamento', 'Data']:
+                # Se encontrar um novo 'Patrimônio', resetamos os metadados se necessário
+                # mas mantemos o loop para pegar os novos valores nas linhas acima
                 continue
 
-            data = row[0] if pd.notna(row[0]) else last_data
-            if pd.notna(row[0]): last_data = row[0]
+            # Lógica de preenchimento para células mescladas/vazias
+            current_data = row[col_idx_data]
+            data_to_use = last_data if pd.isna(current_data) else current_data
+            if pd.notna(current_data):
+                last_data = current_data
 
-            tipo = row[1] if pd.notna(row[1]) else last_tipo
-            if pd.notna(row[1]): last_tipo = row[1]
+            current_tipo_movimento = row[col_idx_tipo_movimento]
+            tipo_movimento_to_use = last_tipo_movimento if pd.isna(current_tipo_movimento) else current_tipo_movimento
+            if pd.notna(current_tipo_movimento):
+                last_tipo_movimento = current_tipo_movimento
 
-            dados.append({
-                'Patrimônio': patrimonio_atual,
-                'Placa/Plaqueta': placa_atual,
-                'Detalhamento': detalhamento_atual,
-                'Data': data,
-                'Tipo do movimento': tipo,
-                'Movimento': row[3],
-                'Centro(s) de Custo': row[4],
-                'Responsável': row[11],
-            })
+            # Filtrar apenas linhas que possuem conteúdo de movimento real
+            if pd.notna(row[col_idx_movimento]) or (pd.notna(row[col_idx_tipo_movimento]) and tipo_movimento_to_use == "Incorporação"):
+                movimento = row[col_idx_movimento]
+                centro_custo = row[col_idx_centro_custo]
+                setor_obra_raw = row[col_idx_setor_obra_col]
+                codigo_barras_actual = row[col_idx_codigo_barras]
+                responsavel = row[col_idx_responsavel]
+
+                setor_origem = None
+                setor_destino = None
+
+                # Regex para extrair Origem e Destino do texto
+                if isinstance(setor_obra_raw, str):
+                    setor_obra_raw = setor_obra_raw.replace("\n", " ").strip()
+
+                    origem_match = re.search(r'Origem:\s*(.*?)(?=(Destino:|$))', setor_obra_raw)
+                    destino_match = re.search(r'Destino:\s*(.*)', setor_obra_raw)
+
+                    if origem_match:
+                        setor_origem = origem_match.group(1).strip()
+                    if destino_match:
+                        setor_destino = destino_match.group(1).strip()
+
+                    # Fallbacks caso o formato varie
+                    if not setor_origem and not setor_destino and "Destino:" in setor_obra_raw:
+                        setor_destino = setor_obra_raw.replace("Destino:", "").strip()
+                    if not setor_destino and not setor_origem:
+                        setor_destino = setor_obra_raw
+
+                # Limpeza específica para Incorporação
+                if tipo_movimento_to_use == "Incorporação" and isinstance(centro_custo, str) and "Destino:" in centro_custo:
+                    centro_custo = centro_custo.replace("Destino:", "").strip()
+
+                dados_reestruturados.append({
+                    'Patrimônio': patrimonio_atual,
+                    'Placa/Plaqueta': placa_atual,
+                    'Código barras': codigo_barras_actual,
+                    'Detalhamento': detalhamento_atual,
+                    'Data': data_to_use,
+                    'Tipo do movimento': tipo_movimento_to_use,
+                    'Movimento': movimento,
+                    'Centro(s) de Custo': centro_custo,
+                    'Setor/obra origem': setor_origem,
+                    'Setor/obra destino': setor_destino,
+                    'Responsável': responsavel,
+                })
 
     return pd.DataFrame(dados)
 

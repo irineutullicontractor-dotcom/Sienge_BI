@@ -1,90 +1,153 @@
+import streamlit as st
 import pandas as pd
+import numpy as np
+import io
 
-# Carregar os dados da planilha fornecida
-df = pd.read_excel('trajetos_e_paradas_01-08-2026_31-08-2026_1059442041_2.xlsx')
+st.set_page_config(page_title="Resumo de Telemetria e Faturamento", layout="wide")
 
-# Identificar nomes/índices das colunas (Colunas A, B, J, K correspondem aos índices 0, 1, 9, 10)
-col_data = df.columns[0]
-col_tag = df.columns[1]
-col_dist = df.columns[9]
-col_tempo = df.columns[10]
+st.title("🚗 Resumo de Telemetria e Faturamento de Veículos")
+st.markdown("Faça upload da planilha de telemetria para geração automática do resumo por equipamento, cálculo de blocos de 7 dias e alertas de inatividade.")
 
-# Garantir tipos de dados corretos
-df[col_data] = pd.to_datetime(df[col_data])
-df[col_dist] = pd.to_numeric(df[col_dist], errors='coerce').fillna(0)
+# Parâmetros Editáveis na barra lateral
+st.sidebar.header("⚙️ Parâmetros das Regras")
+min_dist = st.sidebar.number_input("Distância mínima para considerar trabalho (km)", value=4.0, step=0.5)
+min_tempo = st.sidebar.number_input("Tempo mínimo dirigido para considerar trabalho (min)", value=30.0, step=5.0)
+bloco_dias = st.sidebar.number_input("Tamanho do Bloco de Cobrança (dias)", value=7, step=1)
+dias_alerta_inativo = st.sidebar.number_input("Dias seguidos sem uso para Sinalizar Alerta", value=15, step=1)
 
-# Converter tempo (Coluna K) para minutos se estiver em string HH:MM ou HH:MM:SS
-def converter_para_minutos(val):
+# Upload do arquivo direto no Streamlit (evita o erro FileNotFoundError)
+uploaded_file = st.file_uploader("Selecione a planilha de telemetria (.xlsx ou .csv)", type=["xlsx", "xls", "csv"])
+
+def clean_number(val):
     if pd.isna(val):
-        return 0
+        return 0.0
     if isinstance(val, (int, float)):
-        return val
-    val_str = str(val).strip()
-    partes = val_str.split(':')
-    if len(partes) == 3:
-        return int(partes[0]) * 60 + int(partes[1]) + int(partes[2]) / 60
-    elif len(partes) == 2:
-        return int(partes[0]) * 60 + int(partes[1])
-    return 0
+        return float(val)
+    val_str = str(val).replace('.', '').replace(',', '.').strip()
+    try:
+        return float(val_str)
+    except:
+        return 0.0
 
-df['tempo_minutos'] = df[col_tempo].apply(converter_para_minutos)
-
-# Aplicar o critério de dia trabalhado (Coluna J > 4 e Coluna K > 30 min)
-df['trabalhou'] = (df[col_dist] > 4) & (df['tempo_minutos'] > 30)
-
-# Processar regras por equipamento
-resultados = []
-
-for tag, grupo in df.groupby(col_tag):
-    grupo = grupo.sort_values(by=col_data)
-    
-    dias_trabalhados = grupo[grupo['trabalhou']][col_data].dt.date.tolist()
-    
-    # 1. Cálculo dos blocos de cobrança (faturamento em períodos de 7 dias)
-    dias_cobrados = 0
-    periodos_cobrados = 0
-    
-    if dias_trabalhados:
-        data_inicio_bloco = dias_trabalhados[0]
-        periodos_cobrados = 1
-        
-        for d in dias_trabalhados[1:]:
-            dias_decorridos = (d - data_inicio_bloco).days
-            if dias_decorridos >= 7:
-                blocos_adicionais = dias_decorridos // 7
-                periodos_cobrados += blocos_adicionais
-                data_inicio_bloco = data_inicio_bloco + pd.Timedelta(days=blocos_adicionais * 7)
-                
-        dias_cobrados = periodos_cobrados * 7
-
-    # 2. Verificar se ficou sem uso por pelo menos 15 dias seguidos no período
-    menor_data = grupo[col_data].min()
-    maior_data = grupo[col_data].max()
-    intervalo_completo = pd.date_range(start=menor_data, end=maior_data)
-    
-    dias_ativos_set = set(dias_trabalhados)
-    
-    max_dias_sem_uso = 0
-    contador_sem_uso = 0
-    
-    for dt in intervalo_completo:
-        if dt.date() not in dias_ativos_set:
-            contador_sem_uso += 1
-            if contador_sem_uso > max_dias_sem_uso:
-                max_dias_sem_uso = contador_sem_uso
+if uploaded_file is not None:
+    try:
+        # Leitura e detecção automática do cabeçalho
+        if uploaded_file.name.endswith(('.xlsx', '.xls')):
+            df_raw = pd.read_excel(uploaded_file, header=None)
+            header_idx = 0
+            for idx, row in df_raw.iterrows():
+                row_str = row.astype(str).str.lower().tolist()
+                if any('data' in s for s in row_str) and any('dist' in s for s in row_str or 'placa' in s for s in row_str):
+                    header_idx = idx
+                    break
+            uploaded_file.seek(0)
+            df = pd.read_excel(uploaded_file, skiprows=header_idx)
         else:
-            contador_sem_uso = 0
+            df = pd.read_csv(uploaded_file)
             
-    ficou_15_dias_parado = max_dias_sem_uso >= 15
+        st.success("Arquivo carregado com sucesso!")
+        
+        # Mapeamento dinâmico das colunas
+        cols = df.columns.tolist()
+        st.subheader("📌 Mapeamento de Colunas")
+        col1, col2, col3, col4 = st.columns(4)
+        
+        default_data = next((c for c in cols if 'data' in c.lower()), cols[0])
+        default_tag = next((c for c in cols if any(k in c.lower() for k in ['tag', 'placa', 'veiculo', 'veículo', 'equipamento'])), cols[1 if len(cols)>1 else 0])
+        default_dist = next((c for c in cols if 'dist' in c.lower()), cols[9 if len(cols)>9 else 0])
+        default_tempo = next((c for c in cols if 'tempo' in c.lower() and 'dirigido' in c.lower()), cols[10 if len(cols)>10 else 0])
+        
+        col_data = col1.selectbox("Coluna Data (Coluna A)", cols, index=cols.index(default_data))
+        col_tag = col2.selectbox("Coluna Tag / Equipamento (Coluna B)", cols, index=cols.index(default_tag))
+        col_dist = col3.selectbox("Coluna Distância (Coluna J)", cols, index=cols.index(default_dist))
+        col_tempo = col4.selectbox("Coluna Tempo Dirigido (Coluna K)", cols, index=cols.index(default_tempo))
+        
+        # Tratamento dos dados
+        df['Data_Parsed'] = pd.to_datetime(df[col_data], format='%d/%m/%Y', errors='coerce')
+        if df['Data_Parsed'].isna().sum() > len(df) * 0.5:
+            df['Data_Parsed'] = pd.to_datetime(df[col_data], errors='coerce')
+            
+        df['Dist_Parsed'] = df[col_dist].apply(clean_number)
+        df['Tempo_Parsed'] = df[col_tempo].apply(clean_number)
+        
+        # Condição de dia trabalhado
+        df['Dia_Trabalhado'] = (df['Dist_Parsed'] > min_dist) & (df['Tempo_Parsed'] > min_tempo)
+        df_valid = df.dropna(subset=['Data_Parsed']).copy()
+        
+        if len(df_valid) == 0:
+            st.error("Não foi possível identificar datas válidas na coluna selecionada.")
+        else:
+            # Intervalo completo do mês
+            min_date = df_valid['Data_Parsed'].min().replace(day=1)
+            max_date = (min_date + pd.offsets.MonthEnd(1))
+            full_month_dates = pd.date_range(min_date, max_date)
+            
+            vehicles = sorted(df_valid[col_tag].unique())
+            summary = []
+            
+            for v in vehicles:
+                df_v = df_valid[df_valid[col_tag] == v]
+                
+                # Calendário completo do equipamento
+                calendar = pd.DataFrame({'Data_Parsed': full_month_dates})
+                merged = pd.merge(calendar, df_v[['Data_Parsed', 'Dia_Trabalhado']], on='Data_Parsed', how='left')
+                merged['Dia_Trabalhado'] = merged['Dia_Trabalhado'].fillna(False)
+                
+                merged['Dia_Mes'] = merged['Data_Parsed'].dt.day
+                merged['Bloco'] = ((merged['Dia_Mes'] - 1) // bloco_dias) + 1
+                
+                # Cálculo dos blocos ativos (7 dias por bloco)
+                active_blocks = merged.groupby('Bloco')['Dia_Trabalhado'].any().sum()
+                dias_cobrar = active_blocks * bloco_dias
+                dias_efetivos = merged['Dia_Trabalhado'].sum()
+                
+                # Sequência máxima de dias inativos seguidos
+                streak = 0
+                max_streak = 0
+                for inactive in (~merged['Dia_Trabalhado']):
+                    if inactive:
+                        streak += 1
+                        if streak > max_streak:
+                            max_streak = streak
+                    else:
+                        streak = 0
+                        
+                alerta = "🚨 INATIVO (≥15d)" if max_streak >= dias_alerta_inativo else "✅ OK"
+                
+                summary.append({
+                    'Equipamento / Tag': v,
+                    'Dias Trabalhados Validados': dias_efetivos,
+                    'Blocos de 7d Ativos': active_blocks,
+                    'Mínimo Dias a Cobrar': dias_cobrar,
+                    'Maior Seq. Inativa (Dias)': max_streak,
+                    'Status Inatividade (≥15d)': alerta
+                })
+                
+            res_df = pd.DataFrame(summary)
+            
+            # Indicadores Principais
+            st.markdown("---")
+            m1, m2, m3, m4 = st.columns(4)
+            m1.metric("Total de Equipamentos", len(res_df))
+            m2.metric("Equipamentos Ativos", len(res_df[res_df['Dias Trabalhados Validados'] > 0]))
+            m3.metric("Equipamentos Alertados (Inativos)", len(res_df[res_df['Status Inatividade (≥15d)'].str.contains('INATIVO')]))
+            m4.metric("Total Mínimo de Dias a Cobrar", f"{res_df['Mínimo Dias a Cobrar'].sum()} dias")
+            
+            st.markdown("---")
+            st.subheader("📊 Tabela de Resumo por Equipamento")
+            st.dataframe(res_df, use_container_width=True)
+            
+            # Download do Resumo em Excel
+            buffer = io.BytesIO()
+            with pd.ExcelWriter(buffer, engine='openpyxl') as writer:
+                res_df.to_excel(writer, index=False, sheet_name='Resumo_Faturamento')
+            
+            st.download_button(
+                label="📥 Baixar Tabela em Excel (.xlsx)",
+                data=buffer.getvalue(),
+                file_name="resumo_telemetria_faturamento.xlsx",
+                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+            )
 
-    resultados.append({
-        'Equipamento (Tag)': tag,
-        'Dias Trabalhados (Efetivos)': len(dias_trabalhados),
-        'Períodos de 7d': periodos_cobrados,
-        'Dias a Cobrar': dias_cobrados,
-        'Max Dias Consecutivos Parado': max_dias_sem_uso,
-        'Sinalização (>=15d Parado)': 'SIM - Parado >= 15 dias' if ficou_15_dias_parado else 'Não'
-    })
-
-df_resumo = pd.DataFrame(resultados)
-print(df_resumo.to_string(index=False))
+    except Exception as e:
+        st.error(f"Erro ao processar o arquivo: {e}")

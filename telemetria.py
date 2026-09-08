@@ -81,48 +81,79 @@ if uploaded_file is not None:
             # Intervalo completo do mês
             min_date = df_valid['Data_Parsed'].min().replace(day=1)
             max_date = (min_date + pd.offsets.MonthEnd(1))
-            full_month_dates = pd.date_range(min_date, max_date)
+            total_days_in_month = max_date.day
             
-            # Tratamento para evitar erro com tipos mistos nos nomes dos veículos/tags
             vehicles = sorted([str(v) for v in df_valid[col_tag].dropna().unique()])
             summary = []
             
             for v in vehicles:
                 df_v = df_valid[df_valid[col_tag].astype(str) == v]
+                worked_dates = sorted(df_v[df_v['Dia_Trabalhado']]['Data_Parsed'].dt.day.tolist())
                 
-                # Calendário completo do equipamento
-                calendar = pd.DataFrame({'Data_Parsed': full_month_dates})
-                merged = pd.merge(calendar, df_v[['Data_Parsed', 'Dia_Trabalhado']], on='Data_Parsed', how='left')
-                merged['Dia_Trabalhado'] = merged['Dia_Trabalhado'].fillna(False)
+                periodos = ["N/A", "N/A", "N/A", "N/A"]
+                periodo_desconto = "N/A"
+                dias_cobrar = total_days_in_month
                 
-                merged['Dia_Mes'] = merged['Data_Parsed'].dt.day
-                merged['Bloco'] = ((merged['Dia_Mes'] - 1) // bloco_dias) + 1
-                
-                # Cálculo dos blocos ativos
-                active_blocks = merged.groupby('Bloco')['Dia_Trabalhado'].any().sum()
-                dias_cobrar = active_blocks * bloco_dias
-                dias_efetivos = merged['Dia_Trabalhado'].sum()
-                
-                # Sequência máxima de dias inativos seguidos
-                streak = 0
-                max_streak = 0
-                for inactive in (~merged['Dia_Trabalhado']):
-                    if inactive:
-                        streak += 1
-                        if streak > max_streak:
-                            max_streak = streak
-                    else:
-                        streak = 0
+                if not worked_dates:
+                    # Sem nenhum uso validado
+                    dias_cobrar = 0
+                    periodo_desconto = f"01 a {total_days_in_month}"
+                else:
+                    # Cálculo dos blocos de 7 dias e verificação de inatividade >= 15 dias
+                    first_day = worked_dates[0]
+                    current_day = first_day
+                    period_idx = 0
+                    inactivity_periods = []
+                    
+                    # Verificação de inatividade inicial (do dia 1 até o primeiro uso)
+                    if (first_day - 1) >= dias_alerta_inativo:
+                        inactivity_periods.append(f"01 a {first_day - 1:02d}")
+                    
+                    # Processamento dos blocos a partir do primeiro uso
+                    active_ranges = []
+                    while current_day <= total_days_in_month and period_idx < 4:
+                        start_block = current_day
+                        end_block = min(current_day + bloco_dias - 1, total_days_in_month)
                         
-                alerta = "🚨 INATIVO (≥15d)" if max_streak >= dias_alerta_inativo else "✅ OK"
-                
+                        periodos[period_idx] = f"{start_block:02d} a {end_block:02d}"
+                        active_ranges.append((start_block, end_block))
+                        period_idx += 1
+                        
+                        # Próximo dia trabalhado após o término do bloco de 7 dias
+                        next_worked = [d for d in worked_dates if d > end_block]
+                        if next_worked:
+                            next_day = next_worked[0]
+                            gap = next_day - (end_block + 1)
+                            if gap >= dias_alerta_inativo:
+                                inactivity_periods.append(f"{end_block + 1:02d} a {next_day - 1:02d}")
+                            current_day = next_day
+                        else:
+                            # Verificação de inatividade no final do mês após o último bloco
+                            gap_end = total_days_in_month - end_block
+                            if gap_end >= dias_alerta_inativo:
+                                inactivity_periods.append(f"{end_block + 1:02d} a {total_days_in_month:02d}")
+                            break
+                    
+                    if inactivity_periods:
+                        periodo_desconto = ", ".join(inactivity_periods)
+                        # Se houver período(s) de desconto >= 15 dias, subtrai esses dias do total do mês
+                        dias_desconto = 0
+                        for p in inactivity_periods:
+                            s_d, e_d = map(int, p.split(" a "))
+                            dias_desconto += (e_d - s_d + 1)
+                        dias_cobrar = total_days_in_month - dias_desconto
+                    else:
+                        dias_cobrar = total_days_in_month
+
                 summary.append({
                     'Equipamento / Tag': v,
-                    'Dias Trabalhados Validados': dias_efetivos,
-                    'Blocos de 7d Ativos': active_blocks,
-                    'Mínimo Dias a Cobrar': dias_cobrar,
-                    'Maior Seq. Inativa (Dias)': max_streak,
-                    'Status Inatividade (≥15d)': alerta
+                    'Dias Trabalhados Validados': len(worked_dates),
+                    'Período 1': periodos[0],
+                    'Período 2': periodos[1],
+                    'Período 3': periodos[2],
+                    'Período 4': periodos[3],
+                    'Período de Desconto (≥15d sem uso)': periodo_desconto,
+                    'Total Dias a Cobrar': dias_cobrar
                 })
                 
             res_df = pd.DataFrame(summary)
@@ -132,8 +163,8 @@ if uploaded_file is not None:
             m1, m2, m3, m4 = st.columns(4)
             m1.metric("Total de Equipamentos", len(res_df))
             m2.metric("Equipamentos Ativos", len(res_df[res_df['Dias Trabalhados Validados'] > 0]))
-            m3.metric("Equipamentos Alertados (Inativos)", len(res_df[res_df['Status Inatividade (≥15d)'].astype(str).str.contains('INATIVO')]))
-            m4.metric("Total Mínimo de Dias a Cobrar", f"{res_df['Mínimo Dias a Cobrar'].sum()} dias")
+            m3.metric("Equipamentos com Desconto (≥15d)", len(res_df[res_df['Período de Desconto (≥15d sem uso)'] != 'N/A']))
+            m4.metric("Total de Dias a Cobrar (Geral)", f"{res_df['Total Dias a Cobrar'].sum()} dias")
             
             st.markdown("---")
             st.subheader("📊 Tabela de Resumo por Equipamento")

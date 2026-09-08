@@ -30,13 +30,13 @@ def clean_number(val):
 
 if uploaded_file is not None:
     try:
-        # Leitura e detecção automática do cabeçalho
+        # Leitura e detecção automática do cabeçalho com conversão explícita para string
         if uploaded_file.name.endswith(('.xlsx', '.xls')):
             df_raw = pd.read_excel(uploaded_file, header=None)
             header_idx = 0
             for idx, row in df_raw.iterrows():
-                row_str = row.astype(str).str.lower().tolist()
-                if any('data' in s for s in row_str) and any(('dist' in s or 'placa' in s) for s in row_str):
+                row_str = [str(item).lower() for item in row if pd.notna(item)]
+                if any('data' in s for s in row_str) and any(('dist' in s or 'placa' in s or 'tag' in s) for s in row_str):
                     header_idx = idx
                     break
             uploaded_file.seek(0)
@@ -47,14 +47,16 @@ if uploaded_file is not None:
         st.success("Arquivo carregado com sucesso!")
         
         # Mapeamento dinâmico das colunas
-        cols = df.columns.tolist()
+        cols = [str(c) for c in df.columns.tolist()]
+        df.columns = cols
+        
         st.subheader("📌 Mapeamento de Colunas")
         col1, col2, col3, col4 = st.columns(4)
         
-        default_data = next((c for c in cols if 'data' in str(c).lower()), cols[0])
-        default_tag = next((c for c in cols if any(k in str(c).lower() for k in ['tag', 'placa', 'veiculo', 'veículo', 'equipamento'])), cols[1 if len(cols)>1 else 0])
-        default_dist = next((c for c in cols if 'dist' in str(c).lower()), cols[9 if len(cols)>9 else 0])
-        default_tempo = next((c for c in cols if 'tempo' in str(c).lower() and 'dirigido' in str(c).lower()), cols[10 if len(cols)>10 else 0])
+        default_data = next((c for c in cols if 'data' in c.lower()), cols[0])
+        default_tag = next((c for c in cols if any(k in c.lower() for k in ['tag', 'placa', 'veiculo', 'veículo', 'equipamento'])), cols[1 if len(cols)>1 else 0])
+        default_dist = next((c for c in cols if 'dist' in c.lower()), cols[9 if len(cols)>9 else 0])
+        default_tempo = next((c for c in cols if 'tempo' in c.lower() and 'dirigido' in c.lower()), cols[10 if len(cols)>10 else 0])
         
         col_data = col1.selectbox("Coluna Data (Coluna A)", cols, index=cols.index(default_data))
         col_tag = col2.selectbox("Coluna Tag / Equipamento (Coluna B)", cols, index=cols.index(default_tag))
@@ -81,11 +83,12 @@ if uploaded_file is not None:
             max_date = (min_date + pd.offsets.MonthEnd(1))
             full_month_dates = pd.date_range(min_date, max_date)
             
-            vehicles = sorted(df_valid[col_tag].unique())
+            # Tratamento para evitar erro com tipos mistos nos nomes dos veículos/tags
+            vehicles = sorted([str(v) for v in df_valid[col_tag].dropna().unique()])
             summary = []
             
             for v in vehicles:
-                df_v = df_valid[df_valid[col_tag] == v]
+                df_v = df_valid[df_valid[col_tag].astype(str) == v]
                 
                 # Calendário completo do equipamento
                 calendar = pd.DataFrame({'Data_Parsed': full_month_dates})
@@ -95,7 +98,7 @@ if uploaded_file is not None:
                 merged['Dia_Mes'] = merged['Data_Parsed'].dt.day
                 merged['Bloco'] = ((merged['Dia_Mes'] - 1) // bloco_dias) + 1
                 
-                # Cálculo dos blocos ativos (7 dias por bloco)
+                # Cálculo dos blocos ativos
                 active_blocks = merged.groupby('Bloco')['Dia_Trabalhado'].any().sum()
                 dias_cobrar = active_blocks * bloco_dias
                 dias_efetivos = merged['Dia_Trabalhado'].sum()
@@ -129,7 +132,7 @@ if uploaded_file is not None:
             m1, m2, m3, m4 = st.columns(4)
             m1.metric("Total de Equipamentos", len(res_df))
             m2.metric("Equipamentos Ativos", len(res_df[res_df['Dias Trabalhados Validados'] > 0]))
-            m3.metric("Equipamentos Alertados (Inativos)", len(res_df[res_df['Status Inatividade (≥15d)'].str.contains('INATIVO')]))
+            m3.metric("Equipamentos Alertados (Inativos)", len(res_df[res_df['Status Inatividade (≥15d)'].astype(str).str.contains('INATIVO')]))
             m4.metric("Total Mínimo de Dias a Cobrar", f"{res_df['Mínimo Dias a Cobrar'].sum()} dias")
             
             st.markdown("---")

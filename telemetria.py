@@ -15,7 +15,6 @@ min_tempo = st.sidebar.number_input("Tempo mínimo dirigido para considerar trab
 bloco_dias = st.sidebar.number_input("Tamanho do Bloco de Cobrança (dias)", value=7, step=1)
 dias_alerta_inativo = st.sidebar.number_input("Dias seguidos sem uso para Sinalizar Alerta", value=15, step=1)
 
-# Upload do arquivo direto no Streamlit (evita o erro FileNotFoundError)
 uploaded_file = st.file_uploader("Selecione a planilha de telemetria (.xlsx ou .csv)", type=["xlsx", "xls", "csv"])
 
 def clean_number(val):
@@ -37,7 +36,8 @@ if uploaded_file is not None:
             header_idx = 0
             for idx, row in df_raw.iterrows():
                 row_str = row.astype(str).str.lower().tolist()
-                if any('data' in s for s in row_str) and any('dist' in s for s in row_str or 'placa' in s for s in row_str):
+                # Correção do erro TypeError: 'in <string>' com conversão explícita
+                if any('data' in s for s in row_str) and any(('dist' in s or 'placa' in s) for s in row_str):
                     header_idx = idx
                     break
             uploaded_file.seek(0)
@@ -52,10 +52,10 @@ if uploaded_file is not None:
         st.subheader("📌 Mapeamento de Colunas")
         col1, col2, col3, col4 = st.columns(4)
         
-        default_data = next((c for c in cols if 'data' in c.lower()), cols[0])
-        default_tag = next((c for c in cols if any(k in c.lower() for k in ['tag', 'placa', 'veiculo', 'veículo', 'equipamento'])), cols[1 if len(cols)>1 else 0])
-        default_dist = next((c for c in cols if 'dist' in c.lower()), cols[9 if len(cols)>9 else 0])
-        default_tempo = next((c for c in cols if 'tempo' in c.lower() and 'dirigido' in c.lower()), cols[10 if len(cols)>10 else 0])
+        default_data = next((c for c in cols if 'data' in str(c).lower()), cols[0])
+        default_tag = next((c for c in cols if any(k in str(c).lower() for k in ['tag', 'placa', 'veiculo', 'veículo', 'equipamento'])), cols[1 if len(cols)>1 else 0])
+        default_dist = next((c for c in cols if 'dist' in str(c).lower()), cols[9 if len(cols)>9 else 0])
+        default_tempo = next((c for c in cols if 'tempo' in str(c).lower() and 'dirigido' in str(c).lower()), cols[10 if len(cols)>10 else 0])
         
         col_data = col1.selectbox("Coluna Data (Coluna A)", cols, index=cols.index(default_data))
         col_tag = col2.selectbox("Coluna Tag / Equipamento (Coluna B)", cols, index=cols.index(default_tag))
@@ -150,4 +150,4 @@ if uploaded_file is not None:
             )
 
     except Exception as e:
-        st.error(f"Erro ao processar o arquivo: {e}")
+        st.error(f"Erro ao processar o arquivo: {e}"

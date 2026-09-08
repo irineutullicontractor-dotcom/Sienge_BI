@@ -25,7 +25,7 @@ def clean_number(val):
     val_str = str(val).replace('.', '').replace(',', '.').strip()
     try:
         return float(val_str)
-    except:
+    except Exception:
         return 0.0
 
 if uploaded_file is not None:
@@ -36,7 +36,6 @@ if uploaded_file is not None:
             header_idx = 0
             for idx, row in df_raw.iterrows():
                 row_str = row.astype(str).str.lower().tolist()
-                # Correção do erro TypeError: 'in <string>' com conversão explícita
                 if any('data' in s for s in row_str) and any(('dist' in s or 'placa' in s) for s in row_str):
                     header_idx = idx
                     break
@@ -150,4 +149,4 @@ if uploaded_file is not None:
             )
 
     except Exception as e:
-        st.error(f"Erro ao processar o arquivo: {e}"
+        st.error(f"Erro ao processar o arquivo: {e}")

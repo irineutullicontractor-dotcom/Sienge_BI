@@ -11,7 +11,7 @@ st.markdown("Faça upload da planilha de telemetria para geração automática d
 # Parâmetros Editáveis na barra lateral
 st.sidebar.header("⚙️ Parâmetros das Regras")
 min_dist = st.sidebar.number_input("Distância mínima para considerar trabalho (km)", value=4.0, step=0.5)
-min_tempo = st.sidebar.number_input("Tempo mínimo dirigido para considerar trabalho (min)", value=30.0, step=5.0)
+min_tempo = st.sidebar.number_input("Tempo mínimo de motor ligado para considerar trabalho (min)", value=30.0, step=5.0)
 bloco_dias = st.sidebar.number_input("Tamanho do Bloco de Cobrança (dias)", value=7, step=1)
 dias_alerta_inativo = st.sidebar.number_input("Dias seguidos sem uso para Sinalizar Alerta", value=15, step=1)
 
@@ -56,12 +56,12 @@ if uploaded_file is not None:
         default_data = next((c for c in cols if 'data' in c.lower()), cols[0])
         default_tag = next((c for c in cols if any(k in c.lower() for k in ['tag', 'placa', 'veiculo', 'veículo', 'equipamento'])), cols[1 if len(cols)>1 else 0])
         default_dist = next((c for c in cols if 'dist' in c.lower()), cols[9 if len(cols)>9 else 0])
-        default_tempo = next((c for c in cols if 'tempo' in c.lower() and 'dirigido' in c.lower()), cols[10 if len(cols)>10 else 0])
+        default_tempo = next((c for c in cols if 'tempo' in c.lower() and 'ligado' in c.lower()), cols[10 if len(cols)>10 else 0])
         
         col_data = col1.selectbox("Coluna Data (Coluna A)", cols, index=cols.index(default_data))
         col_tag = col2.selectbox("Coluna Tag / Equipamento (Coluna B)", cols, index=cols.index(default_tag))
         col_dist = col3.selectbox("Coluna Distância (Coluna J)", cols, index=cols.index(default_dist))
-        col_tempo = col4.selectbox("Coluna Tempo Dirigido (Coluna K)", cols, index=cols.index(default_tempo))
+        col_tempo = col6.selectbox("Coluna Tempo Motor Ligado (Coluna M)", cols, index=cols.index(default_tempo))
         
         # Tratamento dos dados
         df['Data_Parsed'] = pd.to_datetime(df[col_data], format='%d/%m/%Y', errors='coerce')

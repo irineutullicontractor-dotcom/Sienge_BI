@@ -61,7 +61,7 @@ if uploaded_file is not None:
         col_data = col1.selectbox("Coluna Data (Coluna A)", cols, index=cols.index(default_data))
         col_tag = col2.selectbox("Coluna Tag / Equipamento (Coluna B)", cols, index=cols.index(default_tag))
         col_dist = col3.selectbox("Coluna Distância (Coluna J)", cols, index=cols.index(default_dist))
-        col_tempo = col6.selectbox("Coluna Tempo Motor Ligado (Coluna M)", cols, index=cols.index(default_tempo))
+        col_tempo = col4.selectbox("Coluna Tempo Motor Ligado (Coluna M)", cols, index=cols.index(default_tempo))
         
         # Tratamento dos dados
         df['Data_Parsed'] = pd.to_datetime(df[col_data], format='%d/%m/%Y', errors='coerce')

@@ -30,7 +30,7 @@ def clean_number(val):
 
 if uploaded_file is not None:
     try:
-        # Leitura e detecção automática do cabeçalho com conversão explícita para string
+        # Leitura e detecção automática do cabeçalho
         if uploaded_file.name.endswith(('.xlsx', '.xls')):
             df_raw = pd.read_excel(uploaded_file, header=None)
             header_idx = 0
@@ -95,52 +95,67 @@ if uploaded_file is not None:
                 dias_cobrar = total_days_in_month
                 
                 if not worked_dates:
-                    # Sem nenhum uso validado
+                    # Sem nenhum uso validado no mês inteiro
                     dias_cobrar = 0
-                    periodo_desconto = f"01 a {total_days_in_month}"
+                    periodo_desconto = f"01 a {total_days_in_month:02d}"
                 else:
-                    # Cálculo dos blocos de 7 dias e verificação de inatividade >= 15 dias
-                    first_day = worked_dates[0]
-                    current_day = first_day
-                    period_idx = 0
+                    # Agrupar dias trabalhados em sessões contínuas de uso (intervalos sem uso < 15 dias)
+                    sessions = []
+                    curr = [worked_dates[0]]
+                    for d in worked_dates[1:]:
+                        if (d - curr[-1] - 1) >= dias_alerta_inativo:
+                            sessions.append(curr)
+                            curr = [d]
+                        else:
+                            curr.append(d)
+                    sessions.append(curr)
+                    
                     inactivity_periods = []
                     
-                    # Verificação de inatividade inicial (do dia 1 até o primeiro uso)
+                    # Verificação de inatividade no início do mês (do dia 01 até o 1º uso)
+                    first_day = sessions[0][0]
                     if (first_day - 1) >= dias_alerta_inativo:
-                        inactivity_periods.append(f"01 a {first_day - 1:02d}")
+                        inactivity_periods.append((1, first_day - 1))
+                        
+                    period_idx = 0
                     
-                    # Processamento dos blocos a partir do primeiro uso
-                    active_ranges = []
-                    while current_day <= total_days_in_month and period_idx < 4:
-                        start_block = current_day
-                        end_block = min(current_day + bloco_dias - 1, total_days_in_month)
+                    for idx, sess in enumerate(sessions):
+                        sess_start = sess[0]
+                        sess_last = sess[-1]
                         
-                        periodos[period_idx] = f"{start_block:02d} a {end_block:02d}"
-                        active_ranges.append((start_block, end_block))
-                        period_idx += 1
+                        # Faturamento da sessão: no mínimo 7 dias a partir do início da sessão,
+                        # ou até o último dia trabalhado se durou mais de 7 dias.
+                        billed_end = max(sess_start + bloco_dias - 1, sess_last)
+                        billed_end = min(billed_end, total_days_in_month)
                         
-                        # Próximo dia trabalhado após o término do bloco de 7 dias
-                        next_worked = [d for d in worked_dates if d > end_block]
-                        if next_worked:
-                            next_day = next_worked[0]
-                            gap = next_day - (end_block + 1)
-                            if gap >= dias_alerta_inativo:
-                                inactivity_periods.append(f"{end_block + 1:02d} a {next_day - 1:02d}")
-                            current_day = next_day
+                        # Divisão dos períodos para exibição nas colunas
+                        cur_start = sess_start
+                        while cur_start <= billed_end and period_idx < 4:
+                            cur_end = min(cur_start + bloco_dias - 1, billed_end)
+                            periodos[period_idx] = f"{cur_start:02d} a {cur_end:02d}"
+                            period_idx += 1
+                            if cur_end == billed_end:
+                                break
+                            cur_start = cur_end + 1
+                            
+                        # Verificar inatividade após essa sessão
+                        if idx < len(sessions) - 1:
+                            next_start = sessions[idx+1][0]
+                            gap_start = billed_end + 1
+                            gap_end = next_start - 1
+                            if (gap_end - gap_start + 1) >= dias_alerta_inativo:
+                                inactivity_periods.append((gap_start, gap_end))
                         else:
-                            # Verificação de inatividade no final do mês após o último bloco
-                            gap_end = total_days_in_month - end_block
-                            if gap_end >= dias_alerta_inativo:
-                                inactivity_periods.append(f"{end_block + 1:02d} a {total_days_in_month:02d}")
-                            break
-                    
+                            # Última sessão do mês: verificar inatividade até o fim do mês
+                            gap_start = billed_end + 1
+                            gap_end = total_days_in_month
+                            if (gap_end - gap_start + 1) >= dias_alerta_inativo:
+                                inactivity_periods.append((gap_start, gap_end))
+                                
+                    # Cálculo dos dias de desconto e dias a cobrar
                     if inactivity_periods:
-                        periodo_desconto = ", ".join(inactivity_periods)
-                        # Se houver período(s) de desconto >= 15 dias, subtrai esses dias do total do mês
-                        dias_desconto = 0
-                        for p in inactivity_periods:
-                            s_d, e_d = map(int, p.split(" a "))
-                            dias_desconto += (e_d - s_d + 1)
+                        dias_desconto = sum(e - s + 1 for s, e in inactivity_periods)
+                        periodo_desconto = ", ".join(f"{s:02d} a {e:02d}" for s, e in inactivity_periods)
                         dias_cobrar = total_days_in_month - dias_desconto
                     else:
                         dias_cobrar = total_days_in_month
